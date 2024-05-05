@@ -1,6 +1,6 @@
 # release.json validator
 
-A validator for `release.json` file according to the `release.json specification`.
+A validator for `release.json` files according to the [release.json specification](https://github.com/ogri-la/release.json).
 
 ## Usage
 
