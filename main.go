@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"flag"
 
@@ -79,6 +82,11 @@ func read_cli_args(arg_list []string) (string, string) {
 
 	input_file := *input_file_ptr
 
+	if !strings.HasSuffix(input_file, ".json") && !strings.HasSuffix(input_file, ".jsonl") {
+		fmt.Printf("input file has unsupported file extension. supported extensions: .json, .jsonl\n")
+		fatal()
+	}
+
 	if !path_exists(input_file) {
 		fmt.Printf("input file does not exist: %s\n", input_file)
 		fatal()
@@ -92,6 +100,11 @@ func read_cli_args(arg_list []string) (string, string) {
 	}
 
 	schema_file := *schema_file_ptr
+
+	if !strings.HasSuffix(schema_file, ".json") {
+		fmt.Printf("schema file has unsupported file extension. supported extensions: .json\n")
+		fatal()
+	}
 
 	if !path_exists(schema_file) {
 		fmt.Printf("schema file does not exist: %s\n", schema_file)
@@ -111,16 +124,54 @@ func validate(schema *jsonschema.Schema, release_dot_json_bytes []byte) error {
 	return schema.Validate(raw)
 }
 
+func read_input_file(input_file string) ([][]byte, error) {
+	empty_response := [][]byte{}
+
+	switch filepath.Ext(input_file) {
+	case ".json":
+		bl, err := os.ReadFile(input_file)
+		if err != nil {
+			return empty_response, err
+		}
+		return [][]byte{bl}, nil
+
+	case ".jsonl":
+		bl := [][]byte{}
+		fh, err := os.Open(input_file)
+		if err != nil {
+			return empty_response, fmt.Errorf("failed to open input file for reading: %w", err)
+		}
+		scanner := bufio.NewScanner(fh)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			blt := []byte(scanner.Text()) // this seems to work when scanner.Bytes() does not ...
+			bl = append(bl, blt)
+		}
+		if err := scanner.Err(); err != nil {
+			return empty_response, fmt.Errorf("failed to read contents of input file: %w", err)
+		}
+		return bl, nil
+
+	default:
+		return empty_response, nil
+	}
+}
+
 func main() {
 	schema_file, input_file := read_cli_args(os.Args)
 	schema := configure_validator(schema_file)
-	release_dot_json_bytes, err := os.ReadFile(input_file)
+	release_dot_json_bytes_list, err := read_input_file(input_file)
 	if err != nil {
-		fmt.Printf("failed to read input file: %v\n", err)
+		slog.Error("failed to read input file", "error", err)
 		fatal()
 	}
-	err = validate(schema, release_dot_json_bytes)
-	if err != nil {
-		fmt.Printf("%#v\n", err)
+
+	for i, release_dot_json_bytes := range release_dot_json_bytes_list {
+		err = validate(schema, release_dot_json_bytes)
+		if err != nil {
+			fmt.Printf("%#v\n", err)
+			break
+		}
+		fmt.Printf("%d valid\n", i+1)
 	}
 }
