@@ -1,4 +1,5 @@
 *~
 rjv
-linux-amd*
-linux-arm*
+linux-a*
+darwin-a*
+windows-a*
