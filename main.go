@@ -22,13 +22,14 @@ var APP_VERSION = "unreleased" // see './manage.sh build.release'
 
 var REMOTE_SCHEMA = "https://raw.githubusercontent.com/ogri-la/release.json-specification/refs/heads/master/schema.json"
 
-// cannot continue, exit immediately without a stacktrace.
+// exits the program with status 1. Prints a "cannot continue, " prefix that
+// Go's own exit message completes. Never returns.
 func fatal() {
 	fmt.Printf("cannot continue, ") // "cannot continue, exit status 1"
 	os.Exit(1)
 }
 
-// load schema remotely
+// remote schema loading
 
 type HTTPURLLoader http.Client
 
@@ -60,8 +61,8 @@ func http_url_loader(insecure bool) *HTTPURLLoader {
 	return &httpLoader
 }
 
-//
-
+// compiles the schema at `schema_file`, which may be a local path or an
+// `https` URL. Calls `fatal` when the schema cannot be fetched or compiled.
 func configure_validator(schema_file string) *jsonschema.Schema {
 	compiler := jsonschema.NewCompiler()
 
@@ -79,11 +80,18 @@ func configure_validator(schema_file string) *jsonschema.Schema {
 	return schema
 }
 
+// checks `path` exists. Returns true when `path` cannot be inspected for any
+// reason other than absence, such as a permission error.
 func path_exists(path string) bool {
 	_, err := os.Stat(path)
 	return !errors.Is(err, os.ErrNotExist)
 }
 
+// reads and checks the command line arguments, returning the schema file and
+// then the input file, in that order. The schema file is `REMOTE_SCHEMA` when
+// `--schema` is not given. Exits the program on `--help` and `--version`, and
+// calls `fatal` when an argument is missing, has an unsupported extension or
+// names a file that does not exist.
 func read_cli_args() (string, string) {
 	input_file_ptr := flag.String("in", "", "path to release.json file")
 	schema_file_ptr := flag.String("schema", "", "path to release.json schema file")
@@ -102,7 +110,7 @@ func read_cli_args() (string, string) {
 		os.Exit(0)
 	}
 
-	// ---
+	// input file
 
 	if input_file_ptr == nil || *input_file_ptr == "" {
 		fmt.Println("--in is required")
@@ -121,7 +129,7 @@ func read_cli_args() (string, string) {
 		fatal()
 	}
 
-	// ---
+	// schema file
 
 	var schema_file string
 	if schema_file_ptr == nil || *schema_file_ptr == "" {
@@ -143,6 +151,10 @@ func read_cli_args() (string, string) {
 	return schema_file, input_file
 }
 
+// checks `release_dot_json_bytes` against `schema`. Returns nil when the
+// document is valid, a wrapped unmarshalling error when the bytes are not
+// JSON, and a `*jsonschema.ValidationError` when the document does not match
+// the schema.
 func validate(schema *jsonschema.Schema, release_dot_json_bytes []byte) error {
 	var raw any
 	err := json.Unmarshal(release_dot_json_bytes, &raw)
@@ -152,6 +164,10 @@ func validate(schema *jsonschema.Schema, release_dot_json_bytes []byte) error {
 	return schema.Validate(raw)
 }
 
+// reads `input_file` into a list of documents, one for each document to
+// validate. A `.json` file gives one entry holding the whole file; a `.jsonl`
+// file gives one entry per line. Any other extension gives an empty list and a
+// nil error.
 func read_input_file(input_file string) ([][]byte, error) {
 	empty_response := [][]byte{}
 
